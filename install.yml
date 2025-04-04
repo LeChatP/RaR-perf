@@ -1,0 +1,96 @@
+---
+- name: Setup everything
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Ensure dependencies are installed
+      become: yes
+      package:
+        name:
+          - gcc
+          - git
+          - hyperfine
+        state: present
+      
+    - name: Ensure bin directory exists
+      file:
+        path: "{{ playbook_dir }}/bin"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure etc directory exists
+      file:
+        path: "{{ playbook_dir }}/etc"
+        state: directory
+        mode: '0755'
+      
+    - name: Check if sudo is installed
+      stat:
+        path: "{{ playbook_dir }}/bin/sudo"
+      register: sudo_check
+
+    - name: Clone sudo
+      git:
+        repo: https://github.com/sudo-project/sudo
+        dest: "{{ playbook_dir }}/sudo"
+        version: main
+      when: not sudo_check.stat.exists
+
+    - name: Build sudo
+      shell: |
+        cd sudo
+        ./configure --disable-sasl --bindir={{ playbook_dir }}/bin --sysconfdir={{ playbook_dir }}/etc --disable-log-server --disable-log-client
+        make
+      when: not sudo_check.stat.exists
+
+    - name: Install sudo
+      become: yes
+      shell: |
+        cd sudo
+        make install
+      when: not sudo_check.stat.exists
+
+    - name: Check if sr is installed
+      stat:
+        path: "{{ playbook_dir }}/etc/rootasrole.json"
+      register: sr_check
+
+
+    - name: Clone and install RootAsRole
+      git:
+        repo: https://github.com/LeChatP/RootAsRole
+        dest: "{{ playbook_dir }}/RootAsRole"
+        version: dev
+        force: yes
+      when: not sr_check.stat.exists
+
+    - name: Copy config template
+      template:
+        src: "{{ playbook_dir }}/templates/config.toml.j2"
+        dest: "{{ playbook_dir }}/RootAsRole/.cargo/config.toml"
+        mode: '0644'
+      when: not sr_check.stat.exists
+
+    - name: Copy config template confgen
+      template:
+        src: "{{ playbook_dir }}/templates/config.toml.j2"
+        dest: "{{ playbook_dir }}/confgen/.cargo/config.toml"
+        mode: '0644'
+      when: not sr_check.stat.exists
+      
+    - name: Build RootAsRole
+      shell: |
+        cd RootAsRole
+        cargo xtask install -bip sudo
+      environment:
+        RUST_LOG: debug
+      when: not sr_check.stat.exists
+
+    - name: Compile confgen
+      shell: |
+        cd confgen
+        cargo build --release
+        cp target/release/confgen {{ playbook_dir }}/bin
+        
+        
+

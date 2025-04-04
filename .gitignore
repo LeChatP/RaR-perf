@@ -1,0 +1,10 @@
+RootAsRole/
+bin/
+etc/
+sudo/
+*.png
+*.csv
+*.json
+*.gz
+target/
+*.lock
