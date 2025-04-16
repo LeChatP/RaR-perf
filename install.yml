@@ -60,7 +60,7 @@
       git:
         repo: https://github.com/LeChatP/RootAsRole
         dest: "{{ playbook_dir }}/RootAsRole"
-        version: dev
+        version: optimize
         force: yes
       when: not sr_check.stat.exists
 

@@ -1,8 +1,12 @@
 import json
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 import pandas as pd
 import re
 import sys
+
+def format_as_float(x, _):
+    return f"{x:.2f}"
 
 # Load the JSON data
 with open(sys.argv[1], 'r') as file:
@@ -20,8 +24,8 @@ for result in results:
         "command": regex.sub(r'\1',result["command"]),
         "nb_roles": int(parameters["nb_roles"]),
         "nb_tasks": int(parameters["nb_tasks"]),
-        "median": result["median"],
-        "mean": result["mean"],
+        "median": result["median"]* 1000,
+        "mean": result["mean"]* 1000,
     })
 
 # Convert to a DataFrame
@@ -38,7 +42,8 @@ plt.plot(dfT[dfT["command"] == "sudo"]["nb_roles"], dfT[dfT["command"] == "sudo"
 plt.plot(dfT[dfT["command"] == "sr"]["nb_roles"], dfT[dfT["command"] == "sr"][statistic_type], label="sr")
 plt.title("Performance Impact of `nb_roles`")
 plt.xlabel("Number of Roles")
-plt.ylabel("Median Performance")
+plt.ylabel(f"{statistic_type.capitalize()} Performance")
+plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
 plt.grid(True)
 plt.legend()
 plt.savefig(sys.argv[2])
@@ -55,7 +60,8 @@ plt.plot(dfR[dfR["command"] == "sudo"]["nb_tasks"], dfR[dfR["command"] == "sudo"
 plt.plot(dfR[dfR["command"] == "sr"]["nb_tasks"], dfR[dfR["command"] == "sr"][statistic_type], label="sr")
 plt.title("Performance Impact of `nb_tasks`")
 plt.xlabel("Number of Tasks")
-plt.ylabel("Median Performance")
+plt.ylabel(f"{statistic_type.capitalize()} Performance (ms)")
+plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
 plt.grid(True)
 plt.legend()
 plt.savefig(sys.argv[3])
@@ -68,7 +74,8 @@ plt.plot(df[df["command"] == "sudo"]["nb_tasks"]*df[df["command"] == "sudo"]["nb
 plt.plot(df[df["command"] == "sr"]["nb_tasks"]*df[df["command"] == "sr"]["nb_roles"], df[df["command"] == "sr"][statistic_type], label="sr")
 plt.title("Performance Impact of `nb_roles` and `nb_tasks`")
 plt.xlabel("Number of Tasks * Number of Roles")
-plt.ylabel("Median Performance")
+plt.ylabel(f"{statistic_type.capitalize()} Performance (ms)")
+plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
 plt.grid(True)
 plt.legend()
 plt.savefig(sys.argv[4])

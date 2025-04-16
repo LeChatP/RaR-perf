@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use capctl::{Cap, CapState};
 use clap::Parser;
-use rootasrole_core::{save_settings, RemoteStorageSettings, Settings, SettingsFile};
+use rootasrole_core::{full_save_settings, FullSettingsFile, RemoteStorageSettings, Settings, StorageMethod};
 
 mod rar;
 mod sudo;
@@ -34,12 +34,12 @@ fn configure_rootasrole_and_sudo(args: &Args) {
     );
     // Write the rootasrole configuration to a file
     with_cap(Cap::DAC_OVERRIDE, || {
-        save_settings(
+        full_save_settings(
             &env!("RAR_CFG_PATH").to_string(),
-            Rc::new(SettingsFile::builder()
+            Rc::new(FullSettingsFile::builder()
                 .storage(
                     Settings::builder()
-                        .method(rootasrole_core::StorageMethod::CBOR)
+                        .method(env!("RAR_CFG_TYPE").parse::<StorageMethod>().unwrap())
                         .settings(
                             RemoteStorageSettings::builder()
                                 .path(env!("RAR_CFG_DATA_PATH"))
