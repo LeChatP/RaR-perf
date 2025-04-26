@@ -31,7 +31,7 @@ pub fn generate_config(
         }).chain(std::iter::once(format!(
             "{users} ALL = {tasks}\n",
             users=(1..=nb_user)
-                .map(|user| format!("#{}", if user == nb_user { user_id } else { user + nb_role } ))
+                .map(|user| format!("#{}", if user == nb_user { user_id } else { user + 1000*nb_role } ))
                 .collect::<Vec<_>>()
                 .join(", "),
             tasks=(1..=nb_task)
