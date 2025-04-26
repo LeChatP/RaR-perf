@@ -22,7 +22,7 @@ for result in results:
     parameters = result["parameters"]
     performance_data.append({
         "command": regex.sub(r'\1',result["command"]),
-        "nb_roles": int(parameters["nb_roles"]),
+        "nb_roles": int(parameters["nb_roles"] if "nb_roles" in parameters else 1),
         "nb_tasks": int(parameters["nb_tasks"]),
         "median": result["median"]* 1000,
         "mean": result["mean"]* 1000,
@@ -52,7 +52,7 @@ plt.show()
 
 # Graph 2: Performance impact of `nb_tasks`
 # take only the values when nb_roles=1
-dfR = df[df["nb_roles"] == 1]
+dfR = df[df["nb_roles"] == 1][df["nb_tasks"] < 2100]
 
 plt.figure(figsize=(10, 6))
 # Two lines: one for each command

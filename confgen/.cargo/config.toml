@@ -2,9 +2,9 @@
 xtask = "run --package xtask --release --bin xtask --"
 
 [env]
-RAR_CFG_TYPE = "json"
+RAR_CFG_TYPE = "cbor"
 RAR_CFG_PATH = "/home/lechatp/perf/etc/rootasrole.json"
-RAR_CFG_DATA_PATH = "/home/lechatp/perf/etc/rootasrole.json"
+RAR_CFG_DATA_PATH = "/home/lechatp/perf/etc/rootasrole.bin"
 RAR_BIN_PATH = "/home/lechatp/perf/bin"
 RAR_CFG_IMMUTABLE = "true"
 RAR_TIMEOUT_TYPE = "PPID"
