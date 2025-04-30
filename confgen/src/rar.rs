@@ -44,7 +44,7 @@ pub fn generate_config(
                                                 .build(),
                                         ))
                                         .setgid(SGroupschooser::StructChooser(
-                                            SSetgidSet::builder(0, SetBehavior::All).build(),
+                                            SSetgidSet::builder(SetBehavior::All, 0).build(),
                                         ))
                                         .build(),
                                 )

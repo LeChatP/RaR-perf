@@ -45,7 +45,13 @@ The performance of RootAsRole is significantly slower than sudo, especially when
 
 #### After optimization
 
-These optimizations resulted in a 34% raw performance improvement for one task (from 4.9ms to 3.2ms) and enhanced scalability by reducing the slope by 97.15%. Compared to sudo, our program has 66.1% better scalability slope with the CBOR format, and 66.4% better raw performance. However, JSON file format is still less efficient by 97.09% than sudo. We think that we could gain even more performance by using relational database (e.g., Limbo) as RBAC model is relational, it could greatly increase the final performance. Reproductible results can be found here.
+These optimizations resulted in a 34% raw performance improvement for one task (from 4.9ms to 3.2ms) and enhanced scalability by reducing the slope by 97.15%. Compared to sudo, our program has 66.1% better scalability slope with the CBOR format, and 66.4% better raw performance. However, JSON file format is still less efficient by 97.09% than sudo.
+
+However, this optimisation lacks of some features.
+
+#### UPDATED: With every features
+
+Now that the program has all the features and is thread-safe, it performs less well than sudo only when using more than ~7500 tasks (which is already a big policy). It is still possible to re-optimise and perform even better than sudo, even in terms of scalability. With the previous graph, we showed how fast we could be, now it's a long-term optimisation process that has begun. We think that we could gain even more performance by using relational database (e.g., Limbo) as RootAsRole uses a RBAC model and this model is relational, it could greatly increase the final performance.
 
 ### Conclusion
 
@@ -56,3 +62,4 @@ The optimization of RootAsRole outperforms sudo with a 66% improvement in raw pe
 <img src="before_cbor_result.png" alt="Before optimisation with CBOR" />
 <img src="after_json_result.png" alt="After optimisation with JSON" />
 <img src="after_cbor_result.png" alt="After optimisation with CBOR" />
+<img src="new_features.png" alt="using new feature and thread-safe" />

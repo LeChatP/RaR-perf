@@ -28,31 +28,15 @@ for result in results:
         "mean": result["mean"]* 1000,
     })
 
+statistic_type = "median"  # Change this to "mean" if you want to plot the mean
+
 # Convert to a DataFrame
 df = pd.DataFrame(performance_data)
-
-# Graph 1: Performance impact of `nb_roles`
-# take only the values when nb_tasks=1
-dfT = df[df["nb_tasks"] == 1]
-plt.figure(figsize=(10, 6))
-
-# Two lines: one for each command
-statistic_type = "median"
-plt.plot(dfT[dfT["command"] == "sudo"]["nb_roles"], dfT[dfT["command"] == "sudo"][statistic_type], label="sudo")
-plt.plot(dfT[dfT["command"] == "sr"]["nb_roles"], dfT[dfT["command"] == "sr"][statistic_type], label="sr")
-plt.title("Performance Impact of `nb_roles`")
-plt.xlabel("Number of Roles")
-plt.ylabel(f"{statistic_type.capitalize()} Performance")
-plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
-plt.grid(True)
-plt.legend()
-plt.savefig(sys.argv[2])
-plt.show()
 
 
 # Graph 2: Performance impact of `nb_tasks`
 # take only the values when nb_roles=1
-dfR = df[df["nb_roles"] == 1][df["nb_tasks"] < 2100]
+dfR = df[df["nb_roles"] == 1]
 
 plt.figure(figsize=(10, 6))
 # Two lines: one for each command
@@ -64,19 +48,5 @@ plt.ylabel(f"{statistic_type.capitalize()} Performance (ms)")
 plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
 plt.grid(True)
 plt.legend()
-plt.savefig(sys.argv[3])
-plt.show()
-
-# Graph 3: Performance impact of `nb_roles` and `nb_tasks`
-plt.figure(figsize=(10, 6))
-# Two lines: one for each command
-plt.plot(df[df["command"] == "sudo"]["nb_tasks"]*df[df["command"] == "sudo"]["nb_roles"], df[df["command"] == "sudo"][statistic_type], label="sudo")
-plt.plot(df[df["command"] == "sr"]["nb_tasks"]*df[df["command"] == "sr"]["nb_roles"], df[df["command"] == "sr"][statistic_type], label="sr")
-plt.title("Performance Impact of `nb_roles` and `nb_tasks`")
-plt.xlabel("Number of Tasks * Number of Roles")
-plt.ylabel(f"{statistic_type.capitalize()} Performance (ms)")
-plt.gca().yaxis.set_major_formatter(FuncFormatter(format_as_float)) 
-plt.grid(True)
-plt.legend()
-plt.savefig(sys.argv[4])
+plt.savefig(sys.argv[2])
 plt.show()
