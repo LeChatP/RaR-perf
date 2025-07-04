@@ -57,9 +57,5 @@ Now that the program has all the features and is thread-safe, it performs less w
 
 I found out that my default (fallback) options values were fully dynamically allocated for each task, explaining the big gap in performance during the first update. Now I use constants. and results are better! We have 77% better raw performance and 45% better slope than sudo. It means that we lost 20% of the slope, but seems realistic as we added more features.
 
-### Conclusion
-
-The optimization of RootAsRole outperforms sudo with a 66% improvement in raw performance and scalability slope with the CBOR file format. While JSON remains less efficient, RootAsRole supports interchangeable file formats, enabling users to balance their preference for JSON with the need for performance through CBOR. Future work could explore relational databases like Limbo to further enhance performance. Also, we could test the performance of the Rust implementation of sudo.
-
 
 <img src="result_25-07-04_15.44.png" />
