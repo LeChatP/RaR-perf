@@ -1,10 +1,22 @@
-RootAsRole/
-bin/
-etc/
-sudo/
-*.png
-*.csv
-*.json
-*.gz
+# the sources that install.yml and versions.yml clone, and what they build and install
+/RootAsRole/
+/sudo/
+/doas/
+/please/
+/sudo-rs/
+/versions/
 target/
-*.lock
+/bin/
+/etc/
+/include/
+/lib/
+/libexec/
+/man/
+/sbin/
+/share/
+/var/
+# every run of bench.yml: keep.sh copies the ones worth keeping into figures/
+/results/
+# older measures and scratch files
+/tmp/
+*.csv
