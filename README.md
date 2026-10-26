@@ -1,61 +1,163 @@
 # RootAsRole performance test
 
-This repository contains a performance test for the RootAsRole project compared to sudo.
+> This README was written by Claude (an AI assistant) at the request of the maintainer, from the playbooks and scripts of this repository.
+
+
+This repository measures how long a privilege tool takes to run a command, as its policy grows:
+`dosr` of [RootAsRole](https://github.com/LeChatP/RootAsRole), sudo, doas, please and run0. It also
+compares the versions of RootAsRole between them. The measures run with
+[hyperfine](https://github.com/sharkdp/hyperfine), from Ansible playbooks.
 
 > [!WARNING]
-> This project reinstall the `sudo` package and the `sudoers` file. It is recommended to run it in a virtual machine or a container.
+> The playbooks install setuid-root binaries, and binaries with file capabilities, that read
+> policies the user of the benchmark can write. They also change files of `/etc` (see
+> [What changes on the system](#what-changes-on-the-system)). Run them in a virtual machine.
 
-## Prerequisites
+## What is measured
 
-- Python 3.8 or later
-- Ansible
+Each tool runs `/usr/bin/true` as root, without a password, with a policy of N rules where only the
+last rule allows `/usr/bin/true`. Before measuring a tool at a given N, hyperfine runs `confgen`
+(`--setup`), which writes the policy of every tool with N rules:
 
-## Installation
+| tool | policy | one rule |
+|---|---|---|
+| dosr | `etc/rootasrole.cbor` | one task of one role, with one command, run as uid 0 |
+| sudo | `etc/sudoers` | one `Cmnd_Alias` of one command, listed as `(ALL) NOPASSWD:` in the line of the user (`#uid`) |
+| doas | `etc/doas.conf` | `permit nopass <user> as root cmd <command>` |
+| please | `/etc/please.ini` | one section, `require_pass = false` |
+| run0 | `/etc/polkit-1/rules.d/10-run0.rules` | one `polkit.addRule` that allows `manage-units` to start `run-p*` units |
 
-```bash
-ansible-playbook install.yml
-```
+The commands of the other rules are `/usr/bin/true<n>`, which do not exist.
+
+`/usr/bin/true` run alone is the baseline. `result_overhead.png` shows the time of each tool above
+it.
+
+Before the measure, `check.sh` asserts, at N=1 and at the largest N, that each tool runs
+`/usr/bin/true` without a password and refuses `/usr/bin/id`. A measure would otherwise time a
+refusal or a password prompt.
+
+The tools do not do the same work. Keep this in mind when reading the plots:
+
+- **PAM:**
+  - sudo and dosr run their PAM account and session stacks, even without a password;
+  - doas (`nopass`) and please (`require_pass = false`) do not call PAM.
+- **run0:**
+  - it asks polkitd and systemd to start the command: the time is the wall-clock time, and the
+    memory plot only counts the process that hyperfine starts;
+  - polkit never sees the command, so run0 cannot refuse `/usr/bin/id`;
+  - polkitd reloads its rules when the file changes, so confgen does not rewrite a file that
+    already holds the same policy.
+- **please** reads only `/etc/please.ini`.
+- **doas, please and run0** get the name of the user from confgen; sudo and dosr get its id.
+
+## Requirements
+
+- A virtual machine of the Arch, Debian, Fedora/RedHat or openSUSE family.
+- Ansible, and cargo (with rustup or the package of the distribution).
+- The sudo package of the distribution, which writes `/etc/pam.d/sudo`.
+- systemd 256 or later for run0. `install.yml` installs polkit.
 
 ## Usage
 
-### Run the test
-
-You need to edit the `confgen/.cargo/config.toml` file to set JSON as the output format.
-There is already two config files in the `confgen` directory, one for JSON and one for CBOR.
-
-```bash
-hyperfine -N --warmup 100 -m 100 -L nb_tasks $(python3 log.py 1 10000 15) -L nb_users 1 -L nb_roles 1 -L nb_commands 1 --setup 'bin/confgen etc/sudoers etc/rootasrole.json {nb_roles} {nb_users} {nb_tasks} {nb_commands} 1000' --export-json result_$(date +%y-%m-%d_%H.%M).json "bin/sudo /usr/bin/true" "bin/sr /usr/bin/true" --show-output
+```sh
+ansible-playbook -K install.yml   # builds sudo, doas, please, RootAsRole and confgen
+ansible-playbook bench.yml        # about 15 min; please at N=10000 takes most of it
 ```
 
-### Generate graphs
-You can use the `perf_opt_new_sudo.json` file to generate graphs with the `plot.py` script.
+A shorter run, of about 5 minutes:
 
-```bash
-python3 plot.py perf_opt_new_sudo.json perf_roles.png perf_tasks.png perf_both.png
+```sh
+ansible-playbook bench.yml -e bench_points=7 -e bench_runs=30 -e bench_warmup=10
 ```
 
-### Results
+To compare the versions of RootAsRole listed in `rar_versions`:
 
-The current results are tested on a virtual machine with 4 cores and 8 GB of RAM on a x360 EliteBook 1040 G9.
+```sh
+ansible-playbook -K versions.yml  # builds each version as bin/rar-<ref>, and genpol
+ansible-playbook bench.yml -e compare=versions
+```
 
+Each version reads its own policy in `etc/versions/`. genpol writes it in the format of that
+version: confgen only writes the format of the RootAsRole it is built with.
 
-#### Before optimization
+## Settings
 
-The performance of RootAsRole is significantly slower than sudo, especially when the number of tasks increases, and the overhead of using JSON for serialization and deserialization is a major factor.
+`vars.yml` holds every setting:
 
-#### After optimization
+- **Pinned versions:** `sudo_version`, `doas_version` and `please_version` are tags.
+  `rar_version: dev` follows the branch: the commit of each run is in its `env.txt`, and a tag or a
+  commit pins it.
+- **RootAsRole settings:** RootAsRole keeps the build settings of its version. Only
+  `rar_build_env` changes, and cargo gets it in the environment, which it prefers over the `[env]`
+  of `.cargo/config.toml`:
+  - the policy and the binaries are in this folder;
+  - the policy is in CBOR, or in JSON with `rar_cfg_type`;
+  - the policy is not immutable, since confgen rewrites it;
+  - dosr does not authenticate.
+- **Size of the measure:** `bench_max_tasks`, `bench_points`, `bench_warmup` and `bench_runs`. N
+  goes from 1 to `bench_max_tasks`, with `bench_points` values evenly spaced on a log scale
+  (`log.py`).
+- **Commands:** `bench_tools` lists the commands to compare, each with its option to never ask a
+  password.
 
-These optimizations resulted in a 34% raw performance improvement for one task (from 4.9ms to 3.2ms) and enhanced scalability by reducing the slope by 97.15%. Compared to sudo, our program has 66.1% better scalability slope with the CBOR format, and 66.4% better raw performance. However, JSON file format is still less efficient by 97.09% than sudo.
+## Results
 
-However, this optimisation lacks of some features.
+Each run of `bench.yml` writes `results/<date>_<tools|versions>/`, which git ignores:
 
-#### UPDATED: With every features
+| file | content |
+|---|---|
+| `result.json` | the hyperfine export, every run of every command |
+| `result.png` | the wall-clock time of each tool, median and band from p25 to p75, log-log |
+| `result_overhead.png` | the median time above `/usr/bin/true` alone |
+| `result_memory.png` | the median peak resident memory |
+| `result_fit.md` | the median at the smallest and largest N, and the cost of one rule (least squares on the medians) |
+| `command.sh` | the hyperfine command of the run, to measure again |
+| `env.txt` | the machine, the commit of each tool, and the PAM stacks of sudo and dosr |
 
-Now that the program has all the features and is thread-safe, it performs less well than sudo only when using more than ~7500 tasks (which is already a big policy). It is still possible to re-optimise and perform even better than sudo, even in terms of scalability. With the previous graph, we showed how fast we could be, now it's a long-term optimisation process that has begun. We think that we could gain even more performance by using relational database (e.g., Limbo) as RootAsRole uses a RBAC model and this model is relational, it could greatly increase the final performance.
+`python3 plot.py <result.json> <out.png>` plots a result again.
 
-#### UPDATE #2: Actually, using constants is good...
+### Keeping a result
 
-I found out that my default (fallback) options values were fully dynamically allocated for each task, explaining the big gap in performance during the first update. Now I use constants. and results are better! We have 77% better raw performance and 45% better slope than sudo. It means that we lost 20% of the slope, but seems realistic as we added more features.
+`keep.sh results/<run>/result.json <name>` copies a run into `figures/<name>/`, which the repository
+holds:
 
+- the hyperfine export, compressed (`result.json.gz`; `plot.py` reads it);
+- the plots and `result_fit.md`;
+- `command.sh` and `env.txt`.
 
-<img src="result_25-07-04_15.44.png" />
+Name it `<yy-mm-dd>_<what it shows>`, and keep only the runs that a document or a change cites.
+
+### Kept results
+
+- `figures/25-07-04_sudo-sr/`: sudo and `sr` (RootAsRole 4.0 in development), from 1 to 10000
+  tasks, with the scripts of that time. Only the plot is left.
+
+## Files
+
+| file | role |
+|---|---|
+| `vars.yml` | the settings |
+| `install.yml` | builds and installs the tools into this folder |
+| `versions.yml` | builds the versions of RootAsRole |
+| `bench.yml` | checks the policies, measures, describes the machine and plots |
+| `confgen/` | writes the policy of each tool with N rules (setuid root, mode 4750) |
+| `genpol/` | writes the policy of each version of RootAsRole with N rules |
+| `check.sh` | checks that each command allows `/usr/bin/true` and refuses `/usr/bin/id` |
+| `describe.sh` | describes the machine and the versions of the tools |
+| `plot.py` | plots a hyperfine export |
+| `log.py` | the values of N |
+| `keep.sh` | copies a run into `figures/` |
+
+## What changes on the system
+
+- **Packages:** `install.yml` installs the packages to build the tools and to plot.
+- **System files:**
+  - `/etc/pam.d/dosr`, written by `cargo xtask install` when it is missing;
+  - `/etc/please.ini` and `/etc/polkit-1/rules.d/10-run0.rules`, rewritten by confgen before each
+    measure;
+  - the manual pages of RootAsRole, when they were built.
+- **Privileged binaries in `bin/`:**
+  - sudo, doas, please and confgen are setuid root;
+  - dosr and the `rar-*` versions have file capabilities;
+  - the policies they read are written by the user of the benchmark, through confgen or genpol;
+  - confgen can write any file as root, so only the group of the user runs it.
