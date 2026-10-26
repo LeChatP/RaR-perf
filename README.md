@@ -129,8 +129,16 @@ Name it `<yy-mm-dd>_<what it shows>`, and keep only the runs that a document or 
 
 ### Kept results
 
-- `figures/25-07-04_sudo-sr/`: sudo and `sr` (RootAsRole 4.0 in development), from 1 to 10000
-  tasks, with the scripts of that time. Only the plot is left.
+The [Performance page](https://lechatp.github.io/RootAsRole/background/performance.html) of the
+RootAsRole book shows these results.
+
+- **2025, 3.1.0 in development** (`sr` was the name of dosr then). These runs used the scripts of
+  that time, and only their plots are left:
+  - `figures/25-04-16_sudo-sr-json/`: sudo and `sr` with a JSON policy, from 1 to 90 tasks;
+  - `figures/25-04-16_sudo-sr-cbor/`: sudo and `sr` with a CBOR policy, from 1 to 400 tasks (the
+    y axis is in seconds);
+  - `figures/25-07-04_sudo-sr/`: sudo and `sr` after the optimisation of the policy engine, from 1
+    to 10000 tasks.
 
 ## Files
 
