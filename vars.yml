@@ -4,6 +4,9 @@ sudo_version: v1.9.17
 doas_version: "6.4"
 please_version: v0.5.6
 rar_version: dev
+# where install.yml and versions.yml clone RootAsRole: a local repository measures commits that
+# are not pushed yet, -e rar_repo=/path/to/RootAsRole
+rar_repo: https://github.com/LeChatP/RootAsRole
 
 # The policy format of RootAsRole, cbor or json: run install.yml again after a change.
 rar_cfg_type: cbor

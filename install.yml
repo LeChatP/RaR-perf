@@ -160,7 +160,7 @@
 
     - name: Clone RootAsRole
       git:
-        repo: https://github.com/LeChatP/RootAsRole
+        repo: "{{ rar_repo }}"
         dest: "{{ playbook_dir }}/RootAsRole"
         version: "{{ rar_version }}"
         # the clone is only built here: this drops the changes that an older install.yml made

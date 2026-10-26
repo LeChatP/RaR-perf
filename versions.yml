@@ -11,7 +11,7 @@
   tasks:
     - name: Clone each version
       git:
-        repo: https://github.com/LeChatP/RootAsRole
+        repo: "{{ rar_repo }}"
         dest: "{{ playbook_dir }}/versions/{{ item.ref }}"
         version: "{{ item.ref }}"
       loop: "{{ rar_versions }}"
