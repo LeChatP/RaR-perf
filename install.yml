@@ -1,96 +1,199 @@
 ---
-- name: Setup everything
+# Builds sudo, doas, please and RootAsRole into this folder, and confgen, which writes their
+# policies before each measure: ansible-playbook -K install.yml
+# It changes the system: it installs the packages to build and plot, writes /etc/pam.d/dosr when
+# it is missing, and confgen writes /etc/please.ini and a polkit rule. The binaries of bin/ are
+# setuid root or have file capabilities, and read policies that the user of the benchmark can
+# write: run it in a virtual machine.
+- name: Build and install the tools to compare
   hosts: localhost
-  gather_facts: no
+  # the family of the distribution names the packages; the user owns confgen
+  gather_facts: yes
+  vars_files:
+    - vars.yml
+  vars:
+    # since 4.2.0, cargo xtask checks the packages to build RootAsRole and no longer installs them
+    packages:
+      Debian: [gcc, git, make, bison, flex, hyperfine, libcap2-bin, polkitd, python3-numpy, python3-matplotlib,
+               clang, pkg-config, libpam0g-dev, libseccomp-dev]
+      RedHat: [gcc, git, make, bison, flex, hyperfine, libcap, polkit, python3-numpy, python3-matplotlib,
+               clang, pkgconfig, pam-devel, libseccomp-devel]
+      Suse: [gcc, git, make, bison, flex, hyperfine, libcap-progs, polkit, python3-numpy, python3-matplotlib,
+             clang, pkg-config, pam-devel, libseccomp-devel]
+      Archlinux: [gcc, git, make, bison, flex, hyperfine, libcap, polkit, python-numpy, python-matplotlib,
+                  clang, pkgconf, pam, libseccomp]
+    # where confgen writes the policy of each tool: please and polkit read /etc only
+    confgen_env:
+      CONFGEN_UID: "{{ ansible_facts['user_uid'] }}"
+      SUDO_CFG_PATH: "{{ playbook_dir }}/etc/sudoers"
+      DOAS_CFG_PATH: "{{ playbook_dir }}/etc/doas.conf"
+      PLEASE_CFG_PATH: /etc/please.ini
+      RUN0_CFG_PATH: /etc/polkit-1/rules.d/10-run0.rules
   tasks:
-    - name: Ensure dependencies are installed
-      become: yes
-      package:
-        name:
-          - gcc
-          - git
-          - hyperfine
-        state: present
-      
-    - name: Ensure bin directory exists
-      file:
-        path: "{{ playbook_dir }}/bin"
-        state: directory
-        mode: '0755'
+    - name: Check that cargo is installed, with rustup or the package of the distribution
+      command: cargo --version
+      changed_when: false
 
-    - name: Ensure etc directory exists
+    - name: Install the packages to build the tools and plot the results
+      become: true
+      package:
+        name: "{{ packages[ansible_facts['os_family']] }}"
+        state: present
+
+    # sudo opens a PAM session even without a password, like dosr, which gets its service below
+    - name: Look for the PAM service of sudo
+      stat:
+        path: /etc/pam.d/sudo
+      register: sudo_pam
+
+    - name: Stop when sudo has no PAM service
+      assert:
+        that: sudo_pam.stat.exists
+        fail_msg: /etc/pam.d/sudo is missing; the sudo package of the distribution writes it
+
+    # the folders of sudo (lib/, var/) are created by its make install, as root
+    - name: Create the folders of the policies and of the results
       file:
-        path: "{{ playbook_dir }}/etc"
+        path: "{{ playbook_dir }}/{{ item }}"
         state: directory
         mode: '0755'
-      
-    - name: Check if sudo is installed
+      loop: [bin, etc, etc/versions, results]
+
+    # each tool is built again when its version changed, or when its binary is missing
+    - name: Clone doas
+      git:
+        repo: https://codeberg.org/thejessesmith/doas.git
+        dest: "{{ playbook_dir }}/doas"
+        version: "{{ doas_version }}"
+      register: doas_clone
+
+    - name: Look for doas
       stat:
-        path: "{{ playbook_dir }}/bin/sudo"
-      register: sudo_check
+        path: "{{ playbook_dir }}/bin/doas"
+      register: doas_bin
+
+    - name: Build doas
+      command: make YACC="bison -y" PREFIX={{ playbook_dir }}
+      args:
+        chdir: "{{ playbook_dir }}/doas"
+      when: doas_clone.changed or not doas_bin.stat.exists
+
+    - name: Install doas, setuid root
+      become: true
+      command: make install YACC="bison -y" PREFIX={{ playbook_dir }}
+      args:
+        chdir: "{{ playbook_dir }}/doas"
+      when: doas_clone.changed or not doas_bin.stat.exists
+
+    - name: Clone please
+      git:
+        repo: https://gitlab.com/edneville/please.git
+        dest: "{{ playbook_dir }}/please"
+        version: "{{ please_version }}"
+      register: please_clone
+
+    - name: Look for please
+      stat:
+        path: "{{ playbook_dir }}/bin/please"
+      register: please_bin
+
+    - name: Build please
+      shell: |
+        cargo test && cargo build --release
+      args:
+        chdir: "{{ playbook_dir }}/please"
+      environment:
+        PREFIX: "{{ playbook_dir }}"
+      when: please_clone.changed or not please_bin.stat.exists
+
+    - name: Install please, setuid root
+      become: true
+      command: install -o 0 -g 0 -m 4755 target/release/please target/release/pleaseedit {{ playbook_dir }}/bin
+      args:
+        chdir: "{{ playbook_dir }}/please"
+      when: please_clone.changed or not please_bin.stat.exists
 
     - name: Clone sudo
       git:
         repo: https://github.com/sudo-project/sudo
         dest: "{{ playbook_dir }}/sudo"
-        version: main
-      when: not sudo_check.stat.exists
+        version: "{{ sudo_version }}"
+      register: sudo_clone
+
+    - name: Look for sudo
+      stat:
+        path: "{{ playbook_dir }}/bin/sudo"
+      register: sudo_bin
 
     - name: Build sudo
       shell: |
-        cd sudo
-        ./configure --disable-sasl --bindir={{ playbook_dir }}/bin --sysconfdir={{ playbook_dir }}/etc --disable-log-server --disable-log-client
+        ./configure \
+        --prefix={{ playbook_dir }} \
+        --sysconfdir={{ playbook_dir }}/etc \
+        --libdir={{ playbook_dir }}/lib \
+        --with-plugindir={{ playbook_dir }}/lib/sudo \
+        --with-rundir={{ playbook_dir }}/var/run \
+        --with-vardir={{ playbook_dir }}/var/lib \
+        --with-logpath={{ playbook_dir }}/var/log/sudo.log \
+        --with-iologdir={{ playbook_dir }}/var/log/sudo-io \
+        --disable-log-server \
+        --disable-log-client
         make
-      when: not sudo_check.stat.exists
+      args:
+        chdir: "{{ playbook_dir }}/sudo"
+      when: sudo_clone.changed or not sudo_bin.stat.exists
 
     - name: Install sudo
-      become: yes
-      shell: |
-        cd sudo
-        make install
-      when: not sudo_check.stat.exists
+      become: true
+      command: make install
+      args:
+        chdir: "{{ playbook_dir }}/sudo"
+      when: sudo_clone.changed or not sudo_bin.stat.exists
 
-    - name: Check if sr is installed
-      stat:
-        path: "{{ playbook_dir }}/etc/rootasrole.json"
-      register: sr_check
+    - name: Setuid sudo binary
+      become: true
+      file:
+        path: "{{ playbook_dir }}/bin/sudo"
+        mode: '4755'
+        owner: root
+        group: root
 
-
-    - name: Clone and install RootAsRole
+    - name: Clone RootAsRole
       git:
         repo: https://github.com/LeChatP/RootAsRole
         dest: "{{ playbook_dir }}/RootAsRole"
-        version: optimize
+        version: "{{ rar_version }}"
+        # the clone is only built here: this drops the changes that an older install.yml made
         force: yes
-      when: not sr_check.stat.exists
 
-    - name: Copy config template
-      template:
-        src: "{{ playbook_dir }}/templates/config.toml.j2"
-        dest: "{{ playbook_dir }}/RootAsRole/.cargo/config.toml"
-        mode: '0644'
-      when: not sr_check.stat.exists
-
-    - name: Copy config template confgen
-      template:
-        src: "{{ playbook_dir }}/templates/config.toml.j2"
-        dest: "{{ playbook_dir }}/confgen/.cargo/config.toml"
-        mode: '0644'
-      when: not sr_check.stat.exists
-      
+    # cargo builds again when the commit or rar_build_env changed, and only then
     - name: Build RootAsRole
-      shell: |
-        cd RootAsRole
-        cargo xtask install -bip sudo
-      environment:
-        RUST_LOG: debug
-      when: not sr_check.stat.exists
+      command: cargo xtask build
+      args:
+        chdir: "{{ playbook_dir }}/RootAsRole"
+      environment: "{{ rar_build_env }}"
 
-    - name: Compile confgen
-      shell: |
-        cd confgen
-        cargo build --release
-        cp target/release/confgen {{ playbook_dir }}/bin
-        
-        
+    # the xtask just built, with the paths of rar_build_env: it copies dosr and chsr into bin/,
+    # gives dosr its file capabilities, writes /etc/pam.d/dosr when it is missing, and the policy
+    # when it is missing, that confgen replaces
+    - name: Install RootAsRole
+      become: true
+      command: target/release/xtask install
+      args:
+        chdir: "{{ playbook_dir }}/RootAsRole"
 
+    # confgen writes the policy of RootAsRole with the core of the clone, so with the settings of
+    # its .cargo/config.toml, and rar_build_env over them
+    - name: Build confgen
+      command: cargo build --release --config ../RootAsRole/.cargo/config.toml
+      args:
+        chdir: "{{ playbook_dir }}/confgen"
+      environment: "{{ rar_build_env | combine(confgen_env) }}"
+
+    # setuid root to write the policies in /etc and in etc/ before each measure: since it can write
+    # any file of the system, only the user of the benchmark runs it
+    - name: Install confgen, setuid root
+      become: true
+      command: install -o root -g {{ ansible_facts['user_gid'] }} -m 4750 target/release/confgen {{ playbook_dir }}/bin/confgen
+      args:
+        chdir: "{{ playbook_dir }}/confgen"

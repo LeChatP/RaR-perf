@@ -1,0 +1,81 @@
+---
+# Measures the tools of install.yml with hyperfine, or with -e compare=versions the versions of
+# versions.yml, then plots them: ansible-playbook bench.yml
+# Each run writes results/<date>_<compare>/: result.json, its plots and the cost of one rule
+# (result_fit.md), command.sh, which measures again, and env.txt, the machine and the versions.
+- name: Measure the tools
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - vars.yml
+  vars:
+    compare: tools
+    # the commands to compare, and the command that writes their policies with {nb_tasks} rules
+    tool_commands: "{{ bench_tools if compare == 'tools'
+                       else rar_versions | map(attribute='ref') | map('regex_replace', '^', playbook_dir ~ '/bin/rar-') | list }}"
+    policy_setup: >-
+      {% if compare == 'tools' %}{{ playbook_dir }}/bin/confgen {nb_tasks}
+      {%- else %}{{ playbook_dir }}/bin/genpol {nb_tasks} {{ lookup('pipe', 'id -u') }} {{ playbook_dir }}/etc/versions
+      {%- for version in rar_versions %} {{ version.ref }}:{{ version.version }}:{{ version.layout }}{% endfor %}{% endif %}
+  tasks:
+    # once, so that every file of a run is in the same folder
+    - name: Name the results, and the values of N
+      set_fact:
+        result_dir: "{{ playbook_dir }}/results/{{ lookup('pipe', 'date +%y-%m-%d_%H.%M') }}_{{ compare }}"
+        nb_tasks: "{{ lookup('pipe', 'python3 ' ~ playbook_dir ~ '/log.py 1 ' ~ bench_max_tasks ~ ' ' ~ bench_points) }}"
+
+    # each tool runs /usr/bin/true without a password and refuses /usr/bin/id, at the smallest
+    # and the largest N
+    - name: Check the policies of every tool
+      shell: |
+        set -e
+        {{ policy_setup | replace('{nb_tasks}', '1') }}
+        ./check.sh {{ tool_commands | map('quote') | join(' ') }}
+        {{ policy_setup | replace('{nb_tasks}', bench_max_tasks | string) }}
+        ./check.sh {{ tool_commands | map('quote') | join(' ') }}
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: policy_check
+
+    - name: Show the checks
+      debug:
+        var: policy_check.stdout_lines
+
+    - name: Create the folder of the results
+      file:
+        path: "{{ result_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Describe the machine and the versions of the tools
+      shell: ./describe.sh > {{ (result_dir ~ '/env.txt') | quote }}
+      args:
+        chdir: "{{ playbook_dir }}"
+
+    # /usr/bin/true alone is the time of running the command; --runs gives each tool samples of
+    # the same size
+    - name: Write the command of the measure
+      copy:
+        dest: "{{ result_dir }}/command.sh"
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          cd {{ playbook_dir | quote }}
+          hyperfine -N --warmup {{ bench_warmup }} --runs {{ bench_runs }} -L nb_tasks {{ nb_tasks }} \
+            --setup {{ policy_setup | quote }} \
+            --export-json {{ (result_dir ~ '/result.json') | quote }} \
+            /usr/bin/true{% for command in tool_commands %} \
+            {{ (command ~ ' /usr/bin/true') | quote }}{% endfor %}
+
+    - name: Measure
+      command: "{{ result_dir }}/command.sh"
+
+    - name: Plot the results
+      command: python3 plot.py {{ result_dir }}/result.json {{ result_dir }}/result.png
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: plot
+
+    - name: Show the cost of one rule
+      debug:
+        var: plot.stdout_lines

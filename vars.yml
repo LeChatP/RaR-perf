@@ -1,0 +1,49 @@
+# The versions that install.yml builds. A tag or a commit builds the same binaries again; a
+# branch follows its last commit, that bench.yml writes in the env.txt of each result.
+sudo_version: v1.9.17
+doas_version: "6.4"
+please_version: v0.5.6
+rar_version: dev
+
+# The policy format of RootAsRole, cbor or json: run install.yml again after a change.
+rar_cfg_type: cbor
+
+# The settings of RootAsRole for the benchmark. install.yml and versions.yml give them to cargo in
+# the environment, which cargo keeps over the [env] of .cargo/config.toml: the other settings stay
+# the ones of the version. The policy and the binaries live in this folder, the policy is written
+# again before each measure, so it is not immutable, and dosr does not authenticate.
+rar_build_env:
+  RAR_CFG_TYPE: "{{ rar_cfg_type }}"
+  RAR_CFG_PATH: "{{ playbook_dir }}/etc/rootasrole.{{ rar_cfg_type }}"
+  RAR_CFG_DATA_PATH: "{{ playbook_dir }}/etc/rootasrole.{{ rar_cfg_type }}"
+  RAR_CFG_IMMUTABLE: "false"
+  RAR_AUTHENTICATION: skip
+  RAR_BIN_PATH: "{{ playbook_dir }}/bin"
+
+# bench.yml measures each tool with N rules, where only the last rule allows /usr/bin/true. N goes
+# from 1 to bench_max_tasks, with bench_points values evenly spaced on a log scale. For a run of
+# about 5 minutes: -e bench_points=7 -e bench_runs=30 -e bench_warmup=10
+bench_max_tasks: 10000
+bench_points: 10
+bench_warmup: 100
+bench_runs: 100
+
+# The tools that bench.yml compares, each with its option to never ask a password: a broken
+# policy then fails the check of bench.yml, instead of timing a prompt.
+bench_tools:
+  - "{{ playbook_dir }}/bin/dosr"
+  - "{{ playbook_dir }}/bin/sudo -n"
+  - "{{ playbook_dir }}/bin/doas -n"
+  - "{{ playbook_dir }}/bin/please -n"
+  - "/usr/bin/run0 --no-ask-password"
+
+# The versions of RootAsRole that versions.yml builds as bin/rar-<ref>, and that
+# bench.yml -e compare=versions compares. ref is a tag, a branch or a commit, without "/";
+# version is the one written in its policy; layout is how it reads the policy: single, one CBOR
+# file, or split, a JSON file that names a CBOR file (3.x).
+rar_versions:
+  - { ref: v3.1.0, version: "3.1.0", layout: split }
+  - { ref: v4.0.0, version: "4.0.0", layout: single }
+  - { ref: v4.0.2, version: "4.0.2", layout: single }
+  - { ref: v4.1.0, version: "4.1.0", layout: single }
+  - { ref: dev, version: "4.2.0", layout: single }

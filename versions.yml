@@ -1,0 +1,52 @@
+---
+# Builds each version of RootAsRole of rar_versions (vars.yml) as bin/rar-<ref>, with its policy in
+# etc/versions/, and genpol, which writes these policies: ansible-playbook -K versions.yml
+# Then bench.yml -e compare=versions measures them. Each version reads a policy that the user of
+# the benchmark writes, with the file capabilities of dosr: run it in a virtual machine.
+- name: Build the versions of RootAsRole to compare
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Clone each version
+      git:
+        repo: https://github.com/LeChatP/RootAsRole
+        dest: "{{ playbook_dir }}/versions/{{ item.ref }}"
+        version: "{{ item.ref }}"
+      loop: "{{ rar_versions }}"
+
+    # 3.x names its binary sr; each version gets the settings of rar_build_env with its own policy,
+    # and cargo builds again only when they or the commit changed
+    - name: Build each version
+      shell: |
+        bin=$(grep -A1 '^\[\[bin\]\]' Cargo.toml | grep -oE '"(sr|dosr)"' | head -n 1 | tr -d '"')
+        cargo build --release --features finder --bin "$bin"
+        cp "target/release/$bin" target/release/rar-bench
+      args:
+        chdir: "{{ playbook_dir }}/versions/{{ item.ref }}"
+      environment: "{{ rar_build_env | combine({'RAR_CFG_TYPE': 'cbor',
+                                                'RAR_CFG_PATH': playbook_dir ~ '/etc/versions/' ~ item.ref ~ '.bin',
+                                                'RAR_CFG_DATA_PATH': playbook_dir ~ '/etc/versions/' ~ item.ref ~ '.bin'}) }}"
+      loop: "{{ rar_versions }}"
+
+    - name: Install each version, with the file capabilities that install gives to dosr
+      become: true
+      shell: |
+        install -o root -g root -m 0555 target/release/rar-bench {{ playbook_dir }}/bin/rar-{{ item.ref }}
+        setcap =p {{ playbook_dir }}/bin/rar-{{ item.ref }}
+      args:
+        chdir: "{{ playbook_dir }}/versions/{{ item.ref }}"
+      loop: "{{ rar_versions }}"
+
+    # genpol writes the policy of each version in its own format, which confgen cannot
+    - name: Build genpol
+      command: cargo build --release
+      args:
+        chdir: "{{ playbook_dir }}/genpol"
+
+    - name: Install genpol
+      copy:
+        src: "{{ playbook_dir }}/genpol/target/release/genpol"
+        dest: "{{ playbook_dir }}/bin/genpol"
+        mode: '0755'
