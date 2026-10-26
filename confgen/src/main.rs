@@ -1,114 +1,47 @@
-use std::rc::Rc;
-
-use capctl::{Cap, CapState};
 use clap::Parser;
-use rootasrole_core::{full_save_settings, FullSettingsFile, RemoteStorageSettings, Settings, StorageMethod};
+use nix::unistd::Uid;
 
+use crate::util::cap_clear;
+
+mod doas;
+mod please;
 mod rar;
+mod run0;
 mod sudo;
+pub mod util;
 
-/// Configure the rootasrole and sudo roles for performance testing.
-///
-/// # Parameters
-/// - `nb_role`: Number of roles to create.
-/// - `nb_user`: Number of users per role.
-/// - `nb_task`: Number of tasks per role.
-/// - `nb_commands`: Number of commands per task.
-///
-/// # Notes
-/// - `nb_role` multiplies the number of `User_Alias` and `nb_task` (`nb_role * nb_task`), and each new task has its own `User_Alias`.
-/// - `nb_user` is the number of users in `User_Alias`. `User_Alias` are per role.
-/// - `nb_task` is the number of sudo rules, which are per role.
-/// - `nb_commands` is the number of commands in a `Cmnd_Alias`, which are per task.
-///
-/// In order to compare the performance of rootasrole and sudo, we need to create a configuration that is as similar as possible.
-/// To be empirical, the valid rule must be at the end of the configuration file.
-fn configure_rootasrole_and_sudo(args: &Args) {
-    // Generate the rootasrole configuration
-    let rootasrole_config = rar::generate_config(
-        args.nb_role,
-        args.nb_user,
-        args.nb_task,
-        args.nb_commands,
-        args.user_id,
-    );
-    // Write the rootasrole configuration to a file
-    with_cap(Cap::DAC_OVERRIDE, || {
-        full_save_settings(
-            &env!("RAR_CFG_PATH").to_string(),
-            Rc::new(FullSettingsFile::builder()
-                .storage(
-                    Settings::builder()
-                        .method(env!("RAR_CFG_TYPE").parse::<StorageMethod>().unwrap())
-                        .settings(
-                            RemoteStorageSettings::builder()
-                                .path(env!("RAR_CFG_DATA_PATH"))
-                                .not_immutable()
-                                .build(),
-                        )
-                        .build(),
-                )
-                .config(rootasrole_config)
-                .build().into()), true
-        ).map_err(|e| {
-            anyhow::anyhow!("Failed to save rootasrole config: {}", e)
-        })
-    })
-    .unwrap();
-
-    // Generate the sudo configuration
-    let sudo_config = sudo::generate_config(
-        args.nb_role,
-        args.nb_user,
-        args.nb_task,
-        args.nb_commands,
-        args.user_id,
-    );
-    // Write the sudo configuration to a file
-    with_cap(Cap::DAC_OVERRIDE, || {
-        sudo::write_sudo_config_to_file(&args.sudo_file, &sudo_config)
-    })
-    .unwrap();
+fn configure_tools(args: &Args) {
+    doas::configure(args);
+    please::configure(args);
+    run0::configure(args);
+    sudo::configure(args);
+    rar::configure(args);
 }
 
 #[derive(Parser)]
 pub struct Args {
-    sudo_file: String,
-    rar_file: String,
-    nb_role: u32,
-    nb_user: u32,
     nb_task: u32,
-    nb_commands: u32,
+    #[clap(short, long, default_value_t = env!("CONFGEN_UID").parse::<u32>().unwrap_or(Uid::current().as_raw()))]
     user_id: u32,
+    #[clap(short, long, default_value = env!("SUDO_CFG_PATH"))]
+    sudo_file: String,
+    #[clap(short, long, default_value = env!("RAR_CFG_PATH"))]
+    rar_file: String,
+    #[clap(short, long, default_value = env!("PLEASE_CFG_PATH"))]
+    please_file: String,
+    // no short option: -r is the one of --rar-file
+    #[clap(long, default_value = env!("RUN0_CFG_PATH"))]
+    run0_file: String,
+    #[clap(short, long, default_value = env!("DOAS_CFG_PATH"))]
+    doas_file: String,
 }
 
 fn main() {
-    let args = Args::parse();
-
     // Set the effective capabilities to none
     cap_clear().unwrap();
 
+    let args = Args::parse();
+
     // Configure the rootasrole and sudo roles for performance testing
-    configure_rootasrole_and_sudo(&args);
-}
-
-fn with_cap(
-    cap: Cap,
-    function: impl FnOnce() -> Result<(), anyhow::Error>,
-) -> Result<(), anyhow::Error> {
-    let mut current = CapState::get_current()?;
-    current.effective.clear();
-    current.effective.set_state(cap, true);
-    current.set_current()?;
-    let result = function();
-    current.effective.clear();
-    current.set_current()?;
-    result
-}
-
-fn cap_clear() -> Result<(), anyhow::Error> {
-    let mut state = CapState::get_current()?;
-    state.effective.clear();
-    state.set_current()?;
-    Ok(())
+    configure_tools(&args);
 }
