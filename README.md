@@ -4,8 +4,8 @@
 
 
 This repository measures how long a privilege tool takes to run a command, as its policy grows:
-`dosr` of [RootAsRole](https://github.com/LeChatP/RootAsRole), sudo, doas, please and run0. It also
-compares the versions of RootAsRole between them. The measures run with
+`dosr` of [RootAsRole](https://github.com/LeChatP/RootAsRole), sudo, doas and please; run0 can be
+measured too (see [run0](#run0)). It also compares the versions of RootAsRole between them. The measures run with
 [hyperfine](https://github.com/sharkdp/hyperfine), from Ansible playbooks.
 
 > [!WARNING]
@@ -25,7 +25,7 @@ last rule allows `/usr/bin/true`. Before measuring a tool at a given N, hyperfin
 | sudo | `etc/sudoers` | one `Cmnd_Alias` of one command, listed as `(ALL) NOPASSWD:` in the line of the user (`#uid`) |
 | doas | `etc/doas.conf` | `permit nopass <user> as root cmd <command>` |
 | please | `/etc/please.ini` | one section, `require_pass = false` |
-| run0 | `/etc/polkit-1/rules.d/10-run0.rules` | one `polkit.addRule` that allows `manage-units` to start `run-p*` units |
+| run0 (not compared by default) | `/etc/polkit-1/rules.d/10-run0.rules` | one `polkit.addRule` that allows `manage-units` to start `run-p*` units |
 
 The commands of the other rules are `/usr/bin/true<n>`, which do not exist.
 
@@ -41,21 +41,34 @@ The tools do not do the same work. Keep this in mind when reading the plots:
 - **PAM:**
   - sudo and dosr run their PAM account and session stacks, even without a password;
   - doas (`nopass`) and please (`require_pass = false`) do not call PAM.
-- **run0:**
-  - it asks polkitd and systemd to start the command: the time is the wall-clock time, and the
-    memory plot only counts the process that hyperfine starts;
-  - polkit never sees the command, so run0 cannot refuse `/usr/bin/id`;
-  - polkitd reloads its rules when the file changes, so confgen does not rewrite a file that
-    already holds the same policy.
 - **please** reads only `/etc/please.ini`.
 - **doas, please and run0** get the name of the user from confgen; sudo and dosr get its id.
+
+### run0
+
+run0 is not in `bench_tools` by default, because it does not do the work that the others do:
+
+- **Its policy cannot name the command.** polkit only sees the action
+  `org.freedesktop.systemd1.manage-units`, which starts a `run-p*` unit, never the command that
+  the unit runs. Its N rules only compare the name of the user, and `/usr/bin/id` is allowed like
+  `/usr/bin/true` (`check.sh` expects it).
+- **Its policy is not read at each run.** polkitd is a daemon: it loads its rules once, when the
+  file changes, and then only calls JavaScript functions that it keeps in memory. sudo, doas,
+  please and dosr read their policy at each run, and the cost of each of their rules includes it.
+- **Its time is spent elsewhere.** run0 asks systemd, through D-Bus, to start the command in a
+  transient unit: the time is the wall-clock time, and the memory plot only counts the process
+  that hyperfine starts.
+
+To measure it anyway, add `/usr/bin/run0 --no-ask-password` to `bench_tools`. confgen writes its
+rules in any case; it does not rewrite a file that already holds the same rules, since polkitd
+reloads them at each change.
 
 ## Requirements
 
 - A virtual machine of the Arch, Debian, Fedora/RedHat or openSUSE family.
 - Ansible, and cargo (with rustup or the package of the distribution).
 - The sudo package of the distribution, which writes `/etc/pam.d/sudo`.
-- systemd 256 or later for run0. `install.yml` installs polkit.
+- systemd 256 or later and polkit, only to measure run0. `install.yml` installs polkit.
 
 ## Usage
 
