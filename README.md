@@ -110,6 +110,8 @@ version: confgen only writes the format of the RootAsRole it is built with.
 - **Size of the measure:** `bench_max_tasks`, `bench_points`, `bench_warmup` and `bench_runs`. N
   goes from 1 to `bench_max_tasks`, with `bench_points` values evenly spaced on a log scale
   (`log.py`).
+- **Source of RootAsRole:** `rar_repo` is GitHub by default; a local repository measures commits
+  that are not pushed yet.
 - **Commands:** `bench_tools` lists the commands to compare, each with its option to never ask a
   password.
 
@@ -152,6 +154,10 @@ RootAsRole book shows these results.
     y axis is in seconds);
   - `figures/25-07-04_sudo-sr/`: sudo and `sr` after the optimisation of the policy engine, from 1
     to 10000 tasks.
+- **2026, 4.2.0 in development** (675369d), with the playbooks of this repository:
+  - `figures/26-10-27_tools/`: dosr, sudo, doas and please, from 1 to 10000 rules;
+  - `figures/26-10-27_versions/`: RootAsRole 3.1.0, 4.0.0, 4.0.2, 4.1.0 and 4.2.0 (`rar-dev`),
+    from 1 to 10000 tasks.
 
 ## Files
 
